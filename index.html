@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Snake AI Vertical</title>
+<title>Snake AI Infinite</title>
 
 <style>
 html, body {
     margin: 0;
     padding: 0;
     height: 100%;
-    background-color: #1a1a1a; /* Fond sombre moderne */
+    background-color: #1a1a1a;
     display: flex;
     flex-direction: column;
     justify-content: center;
@@ -25,7 +25,6 @@ html, body {
     margin-bottom: 15px;
     font-size: 1.2rem;
     font-weight: bold;
-    text-transform: uppercase;
     letter-spacing: 2px;
 }
 
@@ -34,8 +33,6 @@ canvas {
     border: 4px solid #4CAF50;
     border-radius: 15px;
     box-shadow: 0 0 50px rgba(76, 175, 80, 0.3);
-    display: block;
-    /* Responsive pour mobile */
     max-width: 95vw;
     max-height: 80vh;
 }
@@ -51,45 +48,41 @@ canvas {
 <canvas id="game"></canvas>
 
 <script>
-// --- CONFIGURATION ---
+
+// CONFIG
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-// Grille verticale (Plus haut que large)
-const TILE = 20; 
-const COLS = 15; // Largeur
-const ROWS = 25; // Hauteur (Format Vertical)
+const TILE = 20;
+const COLS = 15;
+const ROWS = 25;
 
 canvas.width = TILE * COLS;
 canvas.height = TILE * ROWS;
 
-// Couleurs
 const COL_SNAKE = "#4CAF50";
 const COL_APPLE = "#ff4757";
 const COL_BG_1 = "#2b2b2b";
 const COL_BG_2 = "#333333";
 
-// État du jeu
 let snake = [];
 let apple = {};
 let score = 0;
-let gameOver = false;
 
-// Vitesse de la boucle (ms)
-// Plus le chiffre est bas, plus c'est rapide.
-const GAME_SPEED = 40; 
+const GAME_SPEED = 40;
 
+// INITIALISATION
 function init() {
-    // Serpent commence au milieu
     const startX = Math.floor(COLS / 2);
     const startY = Math.floor(ROWS / 2);
+
     snake = [
         {x: startX, y: startY},
         {x: startX, y: startY + 1},
         {x: startX, y: startY + 2}
     ];
+
     score = 0;
-    gameOver = false;
     spawnApple();
     updateScore();
 }
@@ -101,43 +94,23 @@ function spawnApple() {
             x: Math.floor(Math.random() * COLS),
             y: Math.floor(Math.random() * ROWS)
         };
-        // Vérifier que la pomme n'est pas sur le serpent
         valid = !snake.some(s => s.x === apple.x && s.y === apple.y);
     }
 }
 
-// --- INTELLIGENCE ARTIFICIELLE (CERVEAU) ---
-
+// IA BFS
 function getBestMove() {
     const head = snake[0];
-    
-    // 1. Essayer de trouver le chemin le plus court vers la pomme
     let path = bfs(head, apple);
-    
-    // Si un chemin existe, on prend la première étape
+
     if (path && path.length > 0) {
         return {x: path[0].x - head.x, y: path[0].y - head.y};
     }
 
-    // 2. MODE SURVIE : Si pas de chemin vers la pomme (bloqué),
-    // on essaie d'aller vers la queue pour tourner en rond en attendant une ouverture.
-    let tail = snake[snake.length - 1];
-    let pathToTail = bfs(head, tail);
-    if(pathToTail && pathToTail.length > 0) {
-        return {x: pathToTail[0].x - head.x, y: pathToTail[0].y - head.y};
-    }
-
-    // 3. SECOURS : Si tout échoue, prendre n'importe quelle case libre valide
-    const moves = [{x:0, y:-1}, {x:0, y:1}, {x:-1, y:0}, {x:1, y:0}];
-    for(let m of moves) {
-        let next = {x: head.x + m.x, y: head.y + m.y};
-        if(isValid(next)) return m;
-    }
-
-    return {x:0, y:-1}; // Suicide par défaut si tout est bloqué
+    // fallback simple
+    return {x: 0, y: -1};
 }
 
-// Algorithme de recherche de chemin (Breadth-First Search)
 function bfs(start, target) {
     let queue = [[start]];
     let visited = new Set();
@@ -148,78 +121,86 @@ function bfs(start, target) {
         let current = path[path.length - 1];
 
         if(current.x === target.x && current.y === target.y) {
-            return path.slice(1); // Retourne le chemin sans le point de départ
+            return path.slice(1);
         }
 
         const neighbors = [
-            {x:0, y:-1}, {x:0, y:1}, {x:-1, y:0}, {x:1, y:0}
+            {x:0, y:-1},
+            {x:0, y:1},
+            {x:-1, y:0},
+            {x:1, y:0}
         ];
 
         for(let n of neighbors) {
-            let next = {x: current.x + n.x, y: current.y + n.y};
-            let key = next.x + "," + next.y;
 
-            // Une case est valide si elle est dans la grille et n'est pas le corps du serpent
-            // Exception : On considère la QUEUE comme libre car elle va bouger
-            let isTail = (next.x === snake[snake.length-1].x && next.y === snake[snake.length-1].y);
-            
-            if((isValid(next) || isTail) && !visited.has(key)) {
+            let nx = current.x + n.x;
+            let ny = current.y + n.y;
+
+            // WRAP (portail)
+            if (nx < 0) nx = COLS - 1;
+            if (nx >= COLS) nx = 0;
+            if (ny < 0) ny = ROWS - 1;
+            if (ny >= ROWS) ny = 0;
+
+            let next = {x:nx, y:ny};
+            let key = nx + "," + ny;
+
+            let isTail = (
+                nx === snake[snake.length - 1].x &&
+                ny === snake[snake.length - 1].y
+            );
+
+            if((!snake.some(s => s.x === nx && s.y === ny) || isTail)
+                && !visited.has(key)) {
+
                 visited.add(key);
                 queue.push([...path, next]);
             }
         }
     }
-    return null; // Pas de chemin trouvé
+    return null;
 }
 
-function isValid(pos) {
-    // Vérifier les murs
-    if (pos.x < 0 || pos.y < 0 || pos.x >= COLS || pos.y >= ROWS) return false;
-    // Vérifier collision avec soi-même
-    if (snake.some(s => s.x === pos.x && s.y === pos.y)) return false;
-    return true;
-}
-
-// --- BOUCLE DE JEU ---
-
+// UPDATE LOOP
 function update() {
-    if (gameOver) {
-        init(); // Redémarrage auto
-        return;
-    }
 
     let move = getBestMove();
-    let head = {x: snake[0].x + move.x, y: snake[0].y + move.y};
 
-    // Vérification finale collision (Murs ou Corps)
-    if (!isValid(head)) {
-        // Petite sécurité : si l'IA s'est trompée, on meurt
-        gameOver = true;
-        return;
-    }
+    let head = {
+        x: snake[0].x + move.x,
+        y: snake[0].y + move.y
+    };
+
+    // WRAP WALLS
+    if (head.x < 0) head.x = COLS - 1;
+    if (head.x >= COLS) head.x = 0;
+    if (head.y < 0) head.y = ROWS - 1;
+    if (head.y >= ROWS) head.y = 0;
 
     snake.unshift(head);
 
-    // Manger la pomme
     if (head.x === apple.x && head.y === apple.y) {
         score++;
         updateScore();
-        // Si on gagne (tout rempli)
-        if(snake.length >= COLS * ROWS - 1) {
+
+        if (snake.length >= COLS * ROWS - 1) {
             alert("VICTOIRE !");
             init();
             return;
         }
+
         spawnApple();
     } else {
-        snake.pop(); // Retirer la queue si on n'a pas mangé
+        snake.pop();
     }
 
     draw();
 }
 
+// DRAW
 function draw() {
-    // 1. Fond (Damier)
+
+    // Fond damier
     for (let y = 0; y < ROWS; y++) {
         for (let x = 0; x < COLS; x++) {
             ctx.fillStyle = (x + y) % 2 === 0 ? COL_BG_1 : COL_BG_2;
@@ -227,20 +208,15 @@ function draw() {
         }
     }
 
-    // 2. Pomme
+    // Pomme
     ctx.fillStyle = COL_APPLE;
     ctx.beginPath();
     let ax = apple.x * TILE + TILE/2;
     let ay = apple.y * TILE + TILE/2;
     ctx.arc(ax, ay, TILE/2 - 2, 0, Math.PI * 2);
     ctx.fill();
-    // Reflet sur la pomme
-    ctx.fillStyle = "rgba(255,255,255,0.3)";
-    ctx.beginPath();
-    ctx.arc(ax - 2, ay - 2, 3, 0, Math.PI*2);
-    ctx.fill();
 
-    // 3. Serpent (Style continu et lisse)
+    // Snake continu lisse
     ctx.lineWidth = TILE - 4;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
@@ -249,30 +225,24 @@ function draw() {
     ctx.shadowBlur = 10;
 
     ctx.beginPath();
-    // On dessine une ligne qui relie tous les points du serpent
-    if (snake.length > 0) {
-        let startX = snake[0].x * TILE + TILE/2;
-        let startY = snake[0].y * TILE + TILE/2;
-        ctx.moveTo(startX, startY);
+    let startX = snake[0].x * TILE + TILE/2;
+    let startY = snake[0].y * TILE + TILE/2;
+    ctx.moveTo(startX, startY);
 
-        for (let i = 1; i < snake.length; i++) {
-            let px = snake[i].x * TILE + TILE/2;
-            let py = snake[i].y * TILE + TILE/2;
-            ctx.lineTo(px, py);
-        }
+    for (let i = 1; i < snake.length; i++) {
+        let px = snake[i].x * TILE + TILE/2;
+        let py = snake[i].y * TILE + TILE/2;
+        ctx.lineTo(px, py);
     }
+
     ctx.stroke();
-    
-    // Reset shadow
     ctx.shadowBlur = 0;
 
-    // 4. Yeux du serpent
-    let hx = snake[0].x * TILE + TILE/2;
-    let hy = snake[0].y * TILE + TILE/2;
+    // Yeux
     ctx.fillStyle = "white";
     ctx.beginPath();
-    ctx.arc(hx - 3, hy - 3, 2, 0, Math.PI*2); // Oeil gauche
-    ctx.arc(hx + 3, hy - 3, 2, 0, Math.PI*2); // Oeil droit
+    ctx.arc(startX - 3, startY - 3, 2, 0, Math.PI*2);
+    ctx.arc(startX + 3, startY - 3, 2, 0, Math.PI*2);
     ctx.fill();
 }
 
@@ -280,7 +250,6 @@ function updateScore() {
     document.getElementById("scoreVal").innerText = score;
 }
 
-// Lancement
 init();
 setInterval(update, GAME_SPEED);
 
