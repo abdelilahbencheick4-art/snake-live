@@ -1,1 +1,74 @@
 
+let snake = [{x:12, y:12}];
+let snakeLength = 3; // Taille initiale
+let bodyPositions = []; // Historique pour suivre la tête
+
+function moveSnake() {
+    if(gameOver) return;
+
+    const head = snake[0];
+    let target = apples.reduce((a,b)=>{
+        let da=Math.abs(a.x-head.x)+Math.abs(a.y-head.y);
+        let db=Math.abs(b.x-head.x)+Math.abs(b.y-head.y);
+        return da<db?a:b;
+    });
+    
+    let dx = target.x - head.x;
+    let dy = target.y - head.y;
+    nextDirection = {x: dx===0?0:dx/Math.abs(dx), y: dy===0?0:dy/Math.abs(dy)};
+
+    let newHead = {x: head.x+nextDirection.x, y: head.y+nextDirection.y};
+
+    // COLLISION
+    if(newHead.x<0||newHead.y<0||newHead.x>=TILE_X||newHead.y>=TILE_Y || snake.some(s=>s.x===newHead.x&&s.y===newHead.y)){
+        popups.push({text:"☠️ Crash!", x:newHead.x*GRID, y:newHead.y*GRID, t:60});
+        gameOver=true;
+        return;
+    }
+
+    if(bombs.some(b=>b.x===newHead.x&&b.y===newHead.y)){
+        popups.push({text:"💥 Bomb!", x:newHead.x*GRID, y:newHead.y*GRID, t:60});
+        bombSound.play().catch(()=>{});
+        return;
+    }
+
+    snake.unshift(newHead);
+
+    // Keep positions for smooth body
+    bodyPositions.unshift({...newHead});
+
+    // EAT APPLE
+    let idx=apples.findIndex(a=>a.x===newHead.x&&a.y===newHead.y);
+    if(idx>=0){
+        score += 10;
+        snakeLength++; // Augmente la longueur
+        apples.splice(idx,1);
+        clap.play().catch(()=>{});
+        spawnApple();
+    }
+
+    // Trim body positions
+    while(bodyPositions.length > snakeLength) bodyPositions.pop();
+}
+
+function drawSnake() {
+    // Smooth snake body
+    for(let i=0; i<bodyPositions.length; i++){
+        let pos = bodyPositions[i];
+        let grad=ctx.createLinearGradient(pos.x*GRID,pos.y*GRID,pos.x*GRID+GRID,pos.y*GRID+GRID);
+        grad.addColorStop(0,"#00ffcc");
+        grad.addColorStop(1,i===0?"#00ffaa":"#007a61");
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(pos.x*GRID+GRID/2,pos.y*GRID+GRID/2,GRID/2-1,0,Math.PI*2);
+        ctx.fill();
+    }
+    // Draw arrow on head
+    const h = bodyPositions[0];
+    ctx.strokeStyle="black";
+    ctx.lineWidth=3;
+    ctx.beginPath();
+    ctx.moveTo(h.x*GRID+GRID/2,h.y*GRID+GRID/2);
+    ctx.lineTo(h.x*GRID+GRID/2+direction.x*GRID/2,h.y*GRID+GRID/2+direction.y*GRID/2);
+    ctx.stroke();
+}
