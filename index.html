@@ -3,179 +3,286 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Snake Classic Smooth</title>
+<title>Snake AI Vertical</title>
 
 <style>
-html,body{
-    margin:0;
-    height:100%;
-    background:black;
-    display:flex;
-    justify-content:center;
-    align-items:center;
-    font-family:Arial;
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    background-color: #1a1a1a; /* Fond sombre moderne */
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    font-family: 'Segoe UI', sans-serif;
+    overflow: hidden;
 }
 
-#gameWrapper{
-    display:flex;
-    flex-direction:column;
-    align-items:center;
+#gameInfo {
+    color: white;
+    text-align: center;
+    margin-bottom: 15px;
+    font-size: 1.2rem;
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 2px;
 }
 
-#title{
-    color:white;
-    margin-bottom:10px;
-    font-size:22px;
-}
-
-canvas{
-    background:#8ED14F;
-    border:10px solid #5c8c2a;
-    border-radius:25px;
-    box-shadow:0 0 40px rgba(0,0,0,0.7);
+canvas {
+    background: #2b2b2b;
+    border: 4px solid #4CAF50;
+    border-radius: 15px;
+    box-shadow: 0 0 50px rgba(76, 175, 80, 0.3);
+    display: block;
+    /* Responsive pour mobile */
+    max-width: 95vw;
+    max-height: 80vh;
 }
 </style>
 </head>
 
 <body>
 
-<div id="gameWrapper">
-    <div id="title">Snake Game</div>
-    <canvas id="game"></canvas>
+<div id="gameInfo">
+    Score: <span id="scoreVal">0</span>
 </div>
 
-<script>
+<canvas id="game"></canvas>
 
+<script>
+// --- CONFIGURATION ---
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 
-const TILE = 25;
-const SIZE = 20;
+// Grille verticale (Plus haut que large)
+const TILE = 20; 
+const COLS = 15; // Largeur
+const ROWS = 25; // Hauteur (Format Vertical)
 
-canvas.width = TILE * SIZE;
-canvas.height = TILE * SIZE;
+canvas.width = TILE * COLS;
+canvas.height = TILE * ROWS;
 
-let snake = [{x:5,y:5},{x:4,y:5},{x:3,y:5}];
-let direction = {x:1,y:0};
-let apple = randomApple();
-let speed = 120;
+// Couleurs
+const COL_SNAKE = "#4CAF50";
+const COL_APPLE = "#ff4757";
+const COL_BG_1 = "#2b2b2b";
+const COL_BG_2 = "#333333";
 
-function randomApple(){
-    return {
-        x: Math.floor(Math.random()*SIZE),
-        y: Math.floor(Math.random()*SIZE)
-    };
+// État du jeu
+let snake = [];
+let apple = {};
+let score = 0;
+let gameOver = false;
+
+// Vitesse de la boucle (ms)
+// Plus le chiffre est bas, plus c'est rapide.
+const GAME_SPEED = 40; 
+
+function init() {
+    // Serpent commence au milieu
+    const startX = Math.floor(COLS / 2);
+    const startY = Math.floor(ROWS / 2);
+    snake = [
+        {x: startX, y: startY},
+        {x: startX, y: startY + 1},
+        {x: startX, y: startY + 2}
+    ];
+    score = 0;
+    gameOver = false;
+    spawnApple();
+    updateScore();
 }
 
-function reset(){
-    snake = [{x:5,y:5},{x:4,y:5},{x:3,y:5}];
-    direction = {x:1,y:0};
-    apple = randomApple();
+function spawnApple() {
+    let valid = false;
+    while (!valid) {
+        apple = {
+            x: Math.floor(Math.random() * COLS),
+            y: Math.floor(Math.random() * ROWS)
+        };
+        // Vérifier que la pomme n'est pas sur le serpent
+        valid = !snake.some(s => s.x === apple.x && s.y === apple.y);
+    }
 }
 
-function update(){
+// --- INTELLIGENCE ARTIFICIELLE (CERVEAU) ---
 
-    let head = {
-        x: snake[0].x + direction.x,
-        y: snake[0].y + direction.y
-    };
+function getBestMove() {
+    const head = snake[0];
+    
+    // 1. Essayer de trouver le chemin le plus court vers la pomme
+    let path = bfs(head, apple);
+    
+    // Si un chemin existe, on prend la première étape
+    if (path && path.length > 0) {
+        return {x: path[0].x - head.x, y: path[0].y - head.y};
+    }
 
-    // collision mur
-    if(head.x<0 || head.y<0 || head.x>=SIZE || head.y>=SIZE){
-        reset();
+    // 2. MODE SURVIE : Si pas de chemin vers la pomme (bloqué),
+    // on essaie d'aller vers la queue pour tourner en rond en attendant une ouverture.
+    let tail = snake[snake.length - 1];
+    let pathToTail = bfs(head, tail);
+    if(pathToTail && pathToTail.length > 0) {
+        return {x: pathToTail[0].x - head.x, y: pathToTail[0].y - head.y};
+    }
+
+    // 3. SECOURS : Si tout échoue, prendre n'importe quelle case libre valide
+    const moves = [{x:0, y:-1}, {x:0, y:1}, {x:-1, y:0}, {x:1, y:0}];
+    for(let m of moves) {
+        let next = {x: head.x + m.x, y: head.y + m.y};
+        if(isValid(next)) return m;
+    }
+
+    return {x:0, y:-1}; // Suicide par défaut si tout est bloqué
+}
+
+// Algorithme de recherche de chemin (Breadth-First Search)
+function bfs(start, target) {
+    let queue = [[start]];
+    let visited = new Set();
+    visited.add(start.x + "," + start.y);
+
+    while(queue.length > 0) {
+        let path = queue.shift();
+        let current = path[path.length - 1];
+
+        if(current.x === target.x && current.y === target.y) {
+            return path.slice(1); // Retourne le chemin sans le point de départ
+        }
+
+        const neighbors = [
+            {x:0, y:-1}, {x:0, y:1}, {x:-1, y:0}, {x:1, y:0}
+        ];
+
+        for(let n of neighbors) {
+            let next = {x: current.x + n.x, y: current.y + n.y};
+            let key = next.x + "," + next.y;
+
+            // Une case est valide si elle est dans la grille et n'est pas le corps du serpent
+            // Exception : On considère la QUEUE comme libre car elle va bouger
+            let isTail = (next.x === snake[snake.length-1].x && next.y === snake[snake.length-1].y);
+            
+            if((isValid(next) || isTail) && !visited.has(key)) {
+                visited.add(key);
+                queue.push([...path, next]);
+            }
+        }
+    }
+    return null; // Pas de chemin trouvé
+}
+
+function isValid(pos) {
+    // Vérifier les murs
+    if (pos.x < 0 || pos.y < 0 || pos.x >= COLS || pos.y >= ROWS) return false;
+    // Vérifier collision avec soi-même
+    if (snake.some(s => s.x === pos.x && s.y === pos.y)) return false;
+    return true;
+}
+
+// --- BOUCLE DE JEU ---
+
+function update() {
+    if (gameOver) {
+        init(); // Redémarrage auto
         return;
     }
 
-    // collision soi-même
-    if(snake.some(s=>s.x===head.x && s.y===head.y)){
-        reset();
+    let move = getBestMove();
+    let head = {x: snake[0].x + move.x, y: snake[0].y + move.y};
+
+    // Vérification finale collision (Murs ou Corps)
+    if (!isValid(head)) {
+        // Petite sécurité : si l'IA s'est trompée, on meurt
+        gameOver = true;
         return;
     }
 
     snake.unshift(head);
 
-    // mange pomme
-    if(head.x===apple.x && head.y===apple.y){
-        apple = randomApple();
-    }else{
-        snake.pop();
+    // Manger la pomme
+    if (head.x === apple.x && head.y === apple.y) {
+        score++;
+        updateScore();
+        // Si on gagne (tout rempli)
+        if(snake.length >= COLS * ROWS - 1) {
+            alert("VICTOIRE !");
+            init();
+            return;
+        }
+        spawnApple();
+    } else {
+        snake.pop(); // Retirer la queue si on n'a pas mangé
     }
 
     draw();
 }
 
-function draw(){
-
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-
-    // damier fond
-    for(let y=0;y<SIZE;y++){
-        for(let x=0;x<SIZE;x++){
-            ctx.fillStyle = (x+y)%2===0 ? "#9ddc59" : "#8ed14f";
-            ctx.fillRect(x*TILE,y*TILE,TILE,TILE);
+function draw() {
+    // 1. Fond (Damier)
+    for (let y = 0; y < ROWS; y++) {
+        for (let x = 0; x < COLS; x++) {
+            ctx.fillStyle = (x + y) % 2 === 0 ? COL_BG_1 : COL_BG_2;
+            ctx.fillRect(x * TILE, y * TILE, TILE, TILE);
         }
     }
 
-    // pomme
-    ctx.fillStyle="red";
+    // 2. Pomme
+    ctx.fillStyle = COL_APPLE;
     ctx.beginPath();
-    ctx.arc(
-        apple.x*TILE + TILE/2,
-        apple.y*TILE + TILE/2,
-        TILE/2 - 3,
-        0,
-        Math.PI*2
-    );
+    let ax = apple.x * TILE + TILE/2;
+    let ay = apple.y * TILE + TILE/2;
+    ctx.arc(ax, ay, TILE/2 - 2, 0, Math.PI * 2);
+    ctx.fill();
+    // Reflet sur la pomme
+    ctx.fillStyle = "rgba(255,255,255,0.3)";
+    ctx.beginPath();
+    ctx.arc(ax - 2, ay - 2, 3, 0, Math.PI*2);
     ctx.fill();
 
-    // snake corps continu
-    ctx.lineWidth = TILE - 6;
+    // 3. Serpent (Style continu et lisse)
+    ctx.lineWidth = TILE - 4;
     ctx.lineCap = "round";
     ctx.lineJoin = "round";
-    ctx.strokeStyle = "#2f55d4";
+    ctx.strokeStyle = COL_SNAKE;
+    ctx.shadowColor = "rgba(76, 175, 80, 0.5)";
+    ctx.shadowBlur = 10;
 
     ctx.beginPath();
-    for(let i=0;i<snake.length;i++){
-        let s = snake[i];
-        let px = s.x*TILE + TILE/2;
-        let py = s.y*TILE + TILE/2;
-        if(i===0){
-            ctx.moveTo(px,py);
-        }else{
-            ctx.lineTo(px,py);
+    // On dessine une ligne qui relie tous les points du serpent
+    if (snake.length > 0) {
+        let startX = snake[0].x * TILE + TILE/2;
+        let startY = snake[0].y * TILE + TILE/2;
+        ctx.moveTo(startX, startY);
+
+        for (let i = 1; i < snake.length; i++) {
+            let px = snake[i].x * TILE + TILE/2;
+            let py = snake[i].y * TILE + TILE/2;
+            ctx.lineTo(px, py);
         }
     }
     ctx.stroke();
+    
+    // Reset shadow
+    ctx.shadowBlur = 0;
 
-    // yeux
-    let head = snake[0];
-    ctx.fillStyle="white";
+    // 4. Yeux du serpent
+    let hx = snake[0].x * TILE + TILE/2;
+    let hy = snake[0].y * TILE + TILE/2;
+    ctx.fillStyle = "white";
     ctx.beginPath();
-    ctx.arc(head.x*TILE+TILE/2-4, head.y*TILE+TILE/2-4, 3,0,Math.PI*2);
-    ctx.arc(head.x*TILE+TILE/2+4, head.y*TILE+TILE/2-4, 3,0,Math.PI*2);
+    ctx.arc(hx - 3, hy - 3, 2, 0, Math.PI*2); // Oeil gauche
+    ctx.arc(hx + 3, hy - 3, 2, 0, Math.PI*2); // Oeil droit
     ctx.fill();
 }
 
-setInterval(update,speed);
+function updateScore() {
+    document.getElementById("scoreVal").innerText = score;
+}
 
-// contrôle tactile simple (swipe mobile)
-let startX,startY;
-
-canvas.addEventListener("touchstart",e=>{
-    startX = e.touches[0].clientX;
-    startY = e.touches[0].clientY;
-});
-
-canvas.addEventListener("touchend",e=>{
-    let dx = e.changedTouches[0].clientX - startX;
-    let dy = e.changedTouches[0].clientY - startY;
-
-    if(Math.abs(dx) > Math.abs(dy)){
-        direction = dx>0 ? {x:1,y:0} : {x:-1,y:0};
-    }else{
-        direction = dy>0 ? {x:0,y:1} : {x:0,y:-1};
-    }
-});
+// Lancement
+init();
+setInterval(update, GAME_SPEED);
 
 </script>
 
