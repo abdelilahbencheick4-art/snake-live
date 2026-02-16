@@ -1,9 +1,9 @@
 <!DOCTYPE html>
-<html lang="fr">
+<html>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Snake AI Smart</title>
+<title>Snake AI Stable</title>
 
 <style>
 html,body{
@@ -15,12 +15,11 @@ flex-direction:column;
 justify-content:center;
 align-items:center;
 font-family:Arial;
-overflow:hidden;
 }
 
 #scoreBoard{
 color:white;
-font-size:20px;
+font-size:22px;
 margin-bottom:10px;
 }
 
@@ -28,8 +27,6 @@ canvas{
 border:4px solid #4CAF50;
 border-radius:20px;
 box-shadow:0 0 40px rgba(76,175,80,.6);
-max-width:95vw;
-max-height:80vh;
 }
 </style>
 </head>
@@ -54,19 +51,19 @@ let snake=[];
 let apple={};
 let score=0;
 
-const SPEED=60;
+let cycle=[];
 
-// INIT
+// Création cycle Hamiltonien zigzag
+for(let y=0;y<ROWS;y++){
+if(y%2===0){
+for(let x=0;x<COLS;x++) cycle.push({x,y});
+}else{
+for(let x=COLS-1;x>=0;x--) cycle.push({x,y});
+}
+}
+
 function init(){
-let midX=Math.floor(COLS/2);
-let midY=Math.floor(ROWS/2);
-
-snake=[
-{x:midX,y:midY},
-{x:midX,y:midY+1},
-{x:midX,y:midY+2}
-];
-
+snake=[cycle[0],cycle[1],cycle[2]];
 score=0;
 spawnApple();
 updateScore();
@@ -81,131 +78,21 @@ y:Math.floor(Math.random()*ROWS)
 }while(snake.some(s=>s.x===apple.x && s.y===apple.y));
 }
 
-// BFS PATHFINDING
-function bfs(start,target,body){
-
-let queue=[[start]];
-let visited=new Set();
-visited.add(start.x+","+start.y);
-
-while(queue.length>0){
-
-let path=queue.shift();
-let current=path[path.length-1];
-
-if(current.x===target.x && current.y===target.y){
-return path.slice(1);
-}
-
-let moves=[
-{x:0,y:-1},
-{x:0,y:1},
-{x:-1,y:0},
-{x:1,y:0}
-];
-
-for(let m of moves){
-
-let nx=current.x+m.x;
-let ny=current.y+m.y;
-
-if(nx<0||ny<0||nx>=COLS||ny>=ROWS) continue;
-
-let key=nx+","+ny;
-if(visited.has(key)) continue;
-
-let collision=body.some(b=>b.x===nx&&b.y===ny);
-
-if(!collision){
-visited.add(key);
-queue.push([...path,{x:nx,y:ny}]);
-}
-}
-}
-return null;
-}
-
-// IA PRINCIPALE
-function getMove(){
-
-let head=snake[0];
-
-// 1️⃣ Essayer chemin vers pomme
-let path=bfs(head,apple,snake.slice(0,-1));
-
-if(path && path.length>0){
-
-// Simuler mouvement pour vérifier que ça ne bloque pas
-let newSnake=[path[0],...snake];
-newSnake.pop();
-
-let pathToTail=bfs(path[0],newSnake[newSnake.length-1],newSnake.slice(0,-1));
-
-if(pathToTail){
-return {
-x:path[0].x-head.x,
-y:path[0].y-head.y
-};
-}
-}
-
-// 2️⃣ Sinon suivre la queue
-let tail=snake[snake.length-1];
-let safePath=bfs(head,tail,snake.slice(0,-1));
-
-if(safePath && safePath.length>0){
-return {
-x:safePath[0].x-head.x,
-y:safePath[0].y-head.y
-};
-}
-
-// 3️⃣ Dernier recours : mouvement libre
-let moves=[
-{x:0,y:-1},
-{x:0,y:1},
-{x:-1,y:0},
-{x:1,y:0}
-];
-
-for(let m of moves){
-let nx=head.x+m.x;
-let ny=head.y+m.y;
-if(nx>=0&&ny>=0&&nx<COLS&&ny<ROWS &&
-!snake.some(s=>s.x===nx&&s.y===ny)){
-return m;
-}
-}
-
-return {x:0,y:-1};
-}
-
-// UPDATE LOOP
 function update(){
 
-let move=getMove();
+let head=snake[0];
+let index=cycle.findIndex(c=>c.x===head.x && c.y===head.y);
+let nextCycle=cycle[(index+1)%cycle.length];
 
-let head={
-x:snake[0].x+move.x,
-y:snake[0].y+move.y
-};
+// tentative raccourci vers pomme
+let shortcut=getSafeShortcut(head);
 
-// collision murs
-if(head.x<0||head.y<0||head.x>=COLS||head.y>=ROWS){
-init();
-return;
-}
+// si raccourci sécurisé on le prend
+let next=shortcut ? shortcut : nextCycle;
 
-// collision corps
-if(snake.some(s=>s.x===head.x&&s.y===head.y)){
-init();
-return;
-}
+snake.unshift(next);
 
-snake.unshift(head);
-
-// manger
-if(head.x===apple.x && head.y===apple.y){
+if(next.x===apple.x && next.y===apple.y){
 score++;
 updateScore();
 spawnApple();
@@ -216,7 +103,38 @@ snake.pop();
 draw();
 }
 
-// DRAW
+function getSafeShortcut(head){
+
+let dx=apple.x-head.x;
+let dy=apple.y-head.y;
+
+let moves=[
+{x:Math.sign(dx),y:0},
+{x:0,y:Math.sign(dy)}
+];
+
+for(let m of moves){
+
+let nx=head.x+m.x;
+let ny=head.y+m.y;
+
+if(nx<0||ny<0||nx>=COLS||ny>=ROWS) continue;
+
+let collision=snake.some(s=>s.x===nx && s.y===ny);
+if(collision) continue;
+
+// vérifier que case suivante est dans futur du cycle
+let headIndex=cycle.findIndex(c=>c.x===head.x && c.y===head.y);
+let nextIndex=cycle.findIndex(c=>c.x===nx && c.y===ny);
+
+if(nextIndex>headIndex){
+return {x:nx,y:ny};
+}
+}
+
+return null;
+}
+
 function draw(){
 
 for(let y=0;y<ROWS;y++){
@@ -256,7 +174,6 @@ snake[i].y*TILE+TILE/2
 
 ctx.stroke();
 
-// yeux
 ctx.fillStyle="white";
 ctx.beginPath();
 ctx.arc(snake[0].x*TILE+TILE/2-3,snake[0].y*TILE+TILE/2-3,2,0,Math.PI*2);
@@ -269,7 +186,7 @@ document.getElementById("score").innerText=score;
 }
 
 init();
-setInterval(update,SPEED);
+setInterval(update,60);
 
 </script>
 </body>
